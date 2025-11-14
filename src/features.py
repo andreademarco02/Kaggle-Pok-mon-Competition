@@ -939,8 +939,72 @@ def make_simple_status_events_df(battles, max_turns=30):
         rows.append(row)
     return pd.DataFrame(rows).fillna(0.0)
 
+#############################################################################################################
 
+def assemble_features_from_battles(battles, wr_map, *, include_target=True, wr_turns=30):
+    stats_map_local = build_name_to_stats(battles)
 
+    TURN_LIST_MULTI = (10, 20, 30)
+
+    stats_df        = make_team_stats_df(battles, stats_map_local, max_turns=wr_turns)
+    wr_df           = make_team_wr_df(battles, wr_map, max_turns=wr_turns)
+    switch_df       = make_switch_df(battles)
+    seen_df         = make_seen_p1p2_df(battles, turns_list=TURN_LIST_MULTI, include_target=include_target)
+    hp_multi_df     = make_hp_loss_df_multi(battles, turns_list=TURN_LIST_MULTI, include_target=include_target)
+    hp_t30_df       = make_hp_loss_df(battles, turns=30)
+    status_df       = make_status_df(battles, turns_list=(5, 10, 20))
+    speed_df        = make_speed_df(battles, stats_map_local, turns_list=(5,10,20,30))
+    badstat_df      = make_bad_status_turns_df(battles, turns=30)  
+    ko_df           = make_ko_df(battles, turns_list=(10,20,30))  
+    first_ko_df     = make_first_ko_df(battles, turns=30)
+    momentum_df     = make_momentum_df(battles, max_turns=wr_turns)
+    status_simple_df = make_simple_status_events_df(battles, max_turns=30)
+
+    base_cols = ["battle_id"] + (["player_won"] if include_target else [])
+    out = stats_df[base_cols].copy()
+
+    def _merge(base, more):
+        if more is None:
+            return base
+        m = more.copy()
+
+        if "player_won" in m.columns:
+            m = m.drop(columns=["player_won"])
+
+        drop_obj = [
+            c for c in m.columns
+            if c not in ("battle_id", "player_won")
+            and not pd.api.types.is_numeric_dtype(m[c])
+        ]
+        if drop_obj:
+            m = m.drop(columns=drop_obj)
+
+        return base.merge(m, on="battle_id", how="left")
+
+    for df in [
+        stats_df,
+        wr_df,
+        switch_df,
+        seen_df,
+        hp_multi_df,
+        hp_t30_df,
+        status_df,
+        speed_df, 
+        badstat_df,
+        ko_df,
+        first_ko_df,
+        momentum_df,
+        status_simple_df
+    ]:
+        out = _merge(out, df)
+
+    for c in out.columns:
+        if c not in ("battle_id", "player_won"):
+            out[c] = pd.to_numeric(out[c], errors="coerce")
+
+    out = out.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    return out
 
 
 
